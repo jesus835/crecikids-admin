@@ -2270,7 +2270,7 @@
                     <div class="card-spinner"></div>
                 </div>
                 <div class="metric-value" id="conversion-rate">...</div>
-                <div class="metric-label">Retención</div>
+                <div class="metric-label">Entradas a la App</div>
                 <div class="metric-change positive">
                     <span id="conversion-change">...</span>
                 </div>
@@ -2511,26 +2511,68 @@
             hideAccountOverlay();
             
             document.getElementById('users-overlay').classList.add('show');
-            populateUsersGrid();
+            
+            // Only load users if not already cached
+            if (!cachedUsersData) {
+                populateUsersGrid();
+            }
         }
 
         function hideUsersOverlay() {
             document.getElementById('users-overlay').classList.remove('show');
         }
 
-        function populateUsersGrid() {
-            const usersList = document.getElementById('users-list');
-            usersList.innerHTML = '';
+        // Variable global para cachear los usuarios
+        let cachedUsersData = null;
 
-            if (!allViewsData || allViewsData.length === 0) {
-                usersList.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No hay datos de usuarios disponibles</p>';
+        // Función para limpiar el cache y recargar usuarios
+        function refreshUsersData() {
+            cachedUsersData = null;
+            populateUsersGrid();
+        }
+
+        async function populateUsersGrid() {
+            const usersList = document.getElementById('users-list');
+            
+            // Si ya tenemos datos cacheados, usarlos directamente
+            if (cachedUsersData) {
+                renderUsersGrid(cachedUsersData);
                 return;
             }
 
-            // Group users by email and calculate stats
-            const userStatsMap = new Map();
+            // Solo mostrar "Cargando..." si no hay datos cacheados
+            usersList.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">Cargando usuarios...</p>';
 
-            allViewsData.forEach(user => {
+            try {
+                // Use the same API as "Usuarios Registrados"
+                const response = await fetch(API_URL);
+                const result = await response.json();
+                
+                if (!result.success || !result.data || result.data.length === 0) {
+                    usersList.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No hay usuarios registrados</p>';
+                    return;
+                }
+
+                const registeredUsers = result.data;
+                // Cachear los datos para futuras aperturas
+                cachedUsersData = registeredUsers;
+                
+                renderUsersGrid(registeredUsers);
+
+            } catch (error) {
+                console.error('Error loading users:', error);
+                usersList.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">Error al cargar usuarios</p>';
+            }
+        }
+
+        function renderUsersGrid(registeredUsers) {
+            const usersList = document.getElementById('users-list');
+            usersList.innerHTML = '';
+
+            // Group users by email and calculate stats
+                const userStatsMap = new Map();
+
+                registeredUsers.forEach(user => {
                 const mainEmail = extractMainEmail(user.Correo);
                 const usage = user.Uso || 0;
                 const name = user.Nombre || 'Usuario Anónimo';
@@ -2591,7 +2633,7 @@
                 const firstLetter = userStats.name.charAt(0).toUpperCase();
 
                 // Find the first registration date for this user
-                const firstRegistration = allViewsData
+                const firstRegistration = registeredUsers
                     .filter(user => extractMainEmail(user.Correo) === userStats.email && user.Fecha)
                     .sort((a, b) => new Date(a.Fecha) - new Date(b.Fecha))[0];
                 
@@ -3114,6 +3156,9 @@
                     calculateImpressions(result.data);
                     // actualizar vistas hoy desde impresiones usando Entradas
                     updateTodayViewsFromImpressions();
+                    // actualizar entradas del mes
+                    console.log('Llamando updateConversionRate después de cargar impresiones...');
+                    setTimeout(updateConversionRate, 100);
                 } else {
                     console.error('Error fetching impressions data:', result);
                 }
@@ -3178,14 +3223,20 @@
             // Sum the impression values for the month
             const selectedMonthImpressionsSum = selectedMonthImpressions.reduce((sum, entry) => sum + (entry.Impresiones || 0), 0);
 
-            // Calculate today's impressions
+            // Calculate today's impressions using local date
             const today = new Date();
-            const todayString = today.toISOString().split('T')[0];
+            const toLocalYMD = (d) => {
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return `${y}-${m}-${day}`;
+            };
+            const todayLocal = toLocalYMD(today);
             const todayImpressions = data.filter(entry => {
                 if (!entry.Fecha || entry.Fecha === '') return false;
                 const entryDate = new Date(entry.Fecha);
-                const entryDateString = entryDate.toISOString().split('T')[0];
-                return entryDateString === todayString && entry.Impresiones > 0;
+                const entryDateLocal = toLocalYMD(entryDate);
+                return entryDateLocal === todayLocal && entry.Impresiones > 0;
             });
 
             // Calculate this week's impressions
@@ -3460,13 +3511,13 @@
             const visitors = parseInt(document.getElementById('total-visitors').textContent) || 0;
             const orders = parseInt(document.getElementById('total-orders').textContent) || 0;
             const views = parseInt(document.getElementById('total-views').textContent) || 0;
-            const rate = parseFloat(document.getElementById('conversion-rate').textContent) || 0;
+            const entries = parseInt(document.getElementById('conversion-rate').textContent) || 0;
             
             previousMonthData = {
                 visitors: visitors,
                 orders: orders,
                 views: views,
-                rate: rate
+                entries: entries
             };
             
             currentMonthKey = `${currentSelectedDate.getFullYear()}-${currentSelectedDate.getMonth()}`;
@@ -3762,7 +3813,7 @@
                         visitors: '+12.5%',
                         orders: '+8.3%',
                         views: '+15.2%',
-                        rate: '+2.5%'
+                        entries: '+2.5%'
                     };
                     changeText = defaultValues[metricType] || '+0%';
                     isPositive = true;
@@ -3774,7 +3825,7 @@
                     visitors: '+12.5%',
                     orders: '+8.3%',
                     views: '+15.2%',
-                    rate: '+2.5%'
+                    entries: '+2.5%'
                 };
                 changeText = defaultValues[metricType] || '+0%';
                 isPositive = true;
@@ -3782,7 +3833,7 @@
             }
             
         // Update text and color with arrow
-        const elementId = metricType === 'rate' ? 'conversion-change' : `${metricType}-change`;
+        const elementId = metricType === 'entries' ? 'conversion-change' : `${metricType}-change`;
         const changeElement = document.getElementById(elementId);
         const arrow = isPositive ? '▲' : '▲';
         changeElement.textContent = arrow + ' ' + changeText;
@@ -3807,7 +3858,7 @@
             visitors: 0,
             orders: 0,
             views: 0,
-            rate: 0
+            entries: 0
         };
         
         // Track current month to prevent self-comparison
@@ -3815,30 +3866,49 @@
 
         // Update conversion rate when both visitors and orders data are available
         function updateConversionRate() {
-            const visitorsText = document.getElementById('total-visitors').textContent;
-            const ordersText = document.getElementById('total-orders').textContent;
+            console.log('=== ACTUALIZANDO ENTRADAS DEL MES ===');
+            console.log('allImpressionsData disponible:', !!allImpressionsData);
+            console.log('Cantidad de datos:', allImpressionsData ? allImpressionsData.length : 0);
             
-            console.log('Texto visitantes:', visitorsText);
-            console.log('Texto órdenes:', ordersText);
-            
-            const visitors = parseInt(visitorsText) || 0;
-            const orders = parseInt(ordersText) || 0;
-            
-            console.log('Visitantes parseados:', visitors);
-            console.log('Órdenes parseadas:', orders);
-            
-            if (visitors > 0 && orders >= 0) {
-                const currentRate = parseFloat(((orders / visitors) * 100).toFixed(1));
-                document.getElementById('conversion-rate').textContent = currentRate + '%';
-                
-                // Use the centralized comparison function
-                updateChangePercentage('rate', currentRate);
-            } else {
-                console.log('No se puede calcular conversión - visitantes:', visitors, 'órdenes:', orders);
-                document.getElementById('conversion-rate').textContent = '0%';
-                // Use the centralized comparison function even for 0% rate
-                updateChangePercentage('rate', 0);
+            // Calculate monthly app entries using the same API as "Entradas al App Hoy"
+            if (!allImpressionsData || allImpressionsData.length === 0) {
+                console.log('No hay datos de impresiones para calcular entradas del mes');
+                document.getElementById('conversion-rate').textContent = '0';
+                updateChangePercentage('entries', 0);
+                return;
             }
+
+            // Get selected date and first day of selected month
+            const selectedYear = currentSelectedDate.getFullYear();
+            const selectedMonth = currentSelectedDate.getMonth();
+            const firstDayOfSelectedMonth = new Date(selectedYear, selectedMonth, 1);
+            const lastDayOfSelectedMonth = new Date(selectedYear, selectedMonth + 1, 0);
+
+            console.log('Mes seleccionado:', selectedMonth + 1, 'Año:', selectedYear);
+            console.log('Rango de fechas:', firstDayOfSelectedMonth, 'a', lastDayOfSelectedMonth);
+            
+            // Filter data for selected month
+            const selectedMonthData = allImpressionsData.filter(entry => {
+                if (!entry.Fecha || entry.Fecha === '') return false;
+                const entryDate = new Date(entry.Fecha);
+                const isInRange = entryDate >= firstDayOfSelectedMonth && entryDate <= lastDayOfSelectedMonth;
+                console.log(`Entry: ${entry.Fecha} -> ${entryDate} -> En rango: ${isInRange}, Entradas: ${entry.Entradas || 0}`);
+                return isInRange;
+            });
+
+            console.log('Datos filtrados del mes:', selectedMonthData.length, 'registros');
+            
+            // Sum all "Entradas" for the selected month
+            const monthlyEntries = selectedMonthData.reduce((sum, entry) => sum + (entry.Entradas || 0), 0);
+            
+            console.log('Total entradas del mes seleccionado:', monthlyEntries);
+            
+            // Update DOM
+            document.getElementById('conversion-rate').textContent = monthlyEntries;
+            console.log('DOM actualizado con valor:', monthlyEntries);
+            
+            // Use the centralized comparison function
+            updateChangePercentage('entries', monthlyEntries);
         }
 
         // Update trend colors based on data
@@ -3936,6 +4006,8 @@
                 fetchViewsOrdersData(), // Load views and orders data from same API
                 fetchImpressionsData() // Load impressions data
             ]).then(() => {
+                // Load users data for overlay
+                populateUsersGrid();
                 hideLoading();
             }).catch(error => {
                 console.error('Error loading initial data:', error);
