@@ -2573,6 +2573,11 @@
                 const userStatsMap = new Map();
 
                 registeredUsers.forEach(user => {
+                // Validate and extract email
+                if (!user.Correo) {
+                    console.warn('Usuario sin correo:', user);
+                    return; // Skip users without email
+                }
                 const mainEmail = extractMainEmail(user.Correo);
                 const usage = user.Uso || 0;
                 const name = user.Nombre || 'Usuario Anónimo';
@@ -2629,8 +2634,9 @@
                 ];
                 const timeSlot = timeSlots[index % timeSlots.length];
 
-                // Get first letter of name for avatar
-                const firstLetter = userStats.name.charAt(0).toUpperCase();
+                // Get first letter of name for avatar (handle null, undefined, numbers, and empty strings)
+                const nameStr = String(userStats.name || 'U');
+                const firstLetter = nameStr.charAt(0).toUpperCase() || 'U';
 
                 // Find the first registration date for this user
                 const firstRegistration = registeredUsers
@@ -2644,13 +2650,18 @@
                         year: 'numeric'
                     }) : 'Fecha no disponible';
 
+                // Escape quotes in name and email for onclick attribute
+                const escapedName = String(userStats.name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                const escapedEmail = String(userStats.email || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                const escapedDate = registrationDate.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
                 userCard.innerHTML = `
                     <div class="user-overlay-avatar">
                         <div class="avatar-placeholder">${firstLetter}</div>
                     </div>
                     <div class="user-overlay-info">
-                        <div class="user-overlay-name">${userStats.name}</div>
-                        <div class="user-overlay-specialty">${userStats.email}</div>
+                        <div class="user-overlay-name">${escapedName}</div>
+                        <div class="user-overlay-specialty">${escapedEmail}</div>
                         <div class="user-overlay-rating">
                             <span class="user-overlay-star">
                                 <img src="images/estrella.png" alt="⭐">
@@ -2660,7 +2671,7 @@
                     </div>
                     <div class="user-overlay-availability">
                         <div class="user-overlay-time">${registrationDate}</div>
-                        <button class="user-overlay-button" onclick="showUserDetail('${userStats.name}', '${userStats.email}', ${userStats.totalUsage}, ${userStats.records}, '${registrationDate}')">Contactar</button>
+                        <button class="user-overlay-button" onclick="showUserDetail('${escapedName}', '${escapedEmail}', ${userStats.totalUsage}, ${userStats.records}, '${escapedDate}')">Contactar</button>
                     </div>
                 `;
 
@@ -2766,13 +2777,19 @@
         // Show user detail modal
         function showUserDetail(name, email, totalUsage, records, registrationDate) {
             const detailContent = document.getElementById('user-detail-content');
-            const firstLetter = name.charAt(0).toUpperCase();
+            // Handle null, undefined, numbers, and empty strings
+            const nameStr = String(name || 'U');
+            const firstLetter = nameStr.charAt(0).toUpperCase() || 'U';
             
             // Determine user type based on usage
             let userType = 'Básico';
             if (totalUsage >= 100) userType = 'Premium';
             else if (totalUsage >= 50) userType = 'VIP';
             else if (totalUsage >= 10) userType = 'Activo';
+
+            // Escape quotes for safe HTML insertion
+            const escapedName = String(name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            const escapedEmail = String(email || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
             detailContent.innerHTML = `
                 <div class="user-detail-avatar">
@@ -2781,13 +2798,13 @@
                 <div class="user-detail-info">
                     <div class="user-detail-item">
                         <div class="user-detail-label">Nombre de Usuario</div>
-                        <div class="user-detail-value">${name}</div>
+                        <div class="user-detail-value">${escapedName}</div>
                     </div>
                     <div class="user-detail-item">
                         <div class="user-detail-label">Correo Electrónico</div>
                         <div class="user-detail-email">
-                            <span class="user-detail-email-value">${email}</span>
-                            <button class="copy-email-btn" onclick="copyEmail('${email}', this)">Copiar</button>
+                            <span class="user-detail-email-value">${escapedEmail}</span>
+                            <button class="copy-email-btn" onclick="copyEmail('${escapedEmail}', this)">Copiar</button>
                         </div>
                     </div>
                     <div class="user-detail-item">
@@ -3530,6 +3547,9 @@
 
         // Extract main email (before first underscore)
         function extractMainEmail(email) {
+            if (!email || typeof email !== 'string') {
+                return email || '';
+            }
             return email.split('_')[0];
         }
 
