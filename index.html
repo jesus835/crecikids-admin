@@ -2490,15 +2490,21 @@
 
     <script>
         // API Configuration
-        const API_URL = 'https://script.google.com/macros/s/AKfycbx7A63ndzuoQYP1nExS_dCSLAzNXbVbKR0YgrZZjFtocRhuZA-KBvPfzgVW6lcpudlR/exec';
-        const API_VIEWS_ORDERS_URL = 'https://script.googleusercontent.com/macros/echo?user_content_key=AehSKLhlQZ6KlfZoYMeHKHAHBTOyv3CZKhAJq1S00nl1jQHkKiMttZ6LOKcaYHtTeC5pCdnvcZBannzicbg9DnNAOAQzacVYQ1exUDC_5SPsb6WxT8gvwzn44bXKCezXg3VOiE86n4E0JHC_vMzPCykhHZA3fBp-mX4sZs2MWxl7r9zl-rZ4UrTmEbkEh3Rv2gXBZ555D_W2mS7RSsiL6yymVWQwEg-r18Mrre2TpDJl4e5gjXluQ6FQ-0IkIUpUpNHTkxieG40J8lRpdh2ykDiuEI2Nxz4LlA&lib=MwcvG3hwhfwRgs0aJa79VtIzpTaZOijRF';
+        const API_URL = 'https://script.google.com/macros/s/AKfycbw59X49mapvtkN60qU9miRHvfTu3kP4xD57ssMuwP9YptSQsvuBvLCP_g8N2OXAuZ20/exec';
+        const API_VIEWS_ORDERS_URL = 'https://script.google.com/macros/s/AKfycbysLY4hE3Fb2Mrjny6rkNGxii6ilwPlFetb64V4EOikaTTfrJufeKIxyuhEx7bAtmOt/exec';
         const API_IMPRESSIONS_URL = 'https://script.google.com/macros/s/AKfycbw0w7yG8dsGPSuXppP__zw0xFhMhuxCAqJ2zcmOf2oc5rQUoKsI9uQyA1gBEZKWydrrLw/exec';
+
+        function withCacheBuster(url) {
+            const separator = url.includes('?') ? '&' : '?';
+            return `${url}${separator}t=${Date.now()}`;
+        }
 
         // Calendar state
         let currentSelectedDate = new Date();
         let availableMonths = new Set();
 
         // Global variables for storing API data
+        let allUsersData = [];
         let allViewsData = [];
         let allImpressionsData = []; // datos crudos desde API_IMPRESSIONS_URL
 
@@ -3147,6 +3153,9 @@
                 const result = await response.json();
                 
                 if (result.success && result.data) {
+                    allUsersData = result.data;
+                    cachedUsersData = result.data;
+                    extractAvailableMonths(result.data);
                     calculateMetrics(result.data);
                 } else {
                     console.error('Error fetching data:', result);
@@ -3170,6 +3179,7 @@
                 
                 if (result.success && result.data) {
                     allImpressionsData = result.data; // guardar globalmente
+                    extractAvailableMonths(result.data);
                     calculateImpressions(result.data);
                     // actualizar vistas hoy desde impresiones usando Entradas
                     updateTodayViewsFromImpressions();
@@ -3326,7 +3336,7 @@
         async function fetchViewsOrdersData() {
             try {
                 // Add timestamp to prevent caching
-                const urlWithTimestamp = API_VIEWS_ORDERS_URL + '&t=' + Date.now();
+                const urlWithTimestamp = withCacheBuster(API_VIEWS_ORDERS_URL);
                 const response = await fetch(urlWithTimestamp);
                 const result = await response.json();
                 
@@ -3419,7 +3429,6 @@
 
         // Extract available months from data
         function extractAvailableMonths(data) {
-            availableMonths.clear();
             data.forEach(user => {
                 if (user.Fecha && user.Fecha !== '') {
                     const userDate = new Date(user.Fecha);
@@ -3455,6 +3464,25 @@
             document.getElementById('next-month').disabled = !availableMonths.has(nextMonthKey);
         }
 
+        function renderCurrentMonthFromCache() {
+            updateCalendarDisplay();
+
+            if (allUsersData.length > 0) {
+                calculateMetrics(allUsersData);
+            }
+
+            if (allViewsData.length > 0) {
+                calculateViewsAndOrders(allViewsData);
+                updateTodayStats(allViewsData);
+            }
+
+            if (allImpressionsData.length > 0) {
+                calculateImpressions(allImpressionsData);
+                updateTodayViewsFromImpressions();
+                updateConversionRate();
+            }
+        }
+
         // Navigate to previous month
         function goToPreviousMonth() {
             const prevMonth = new Date(currentSelectedDate.getFullYear(), currentSelectedDate.getMonth() - 1);
@@ -3473,19 +3501,8 @@
                 saveCurrentMonthData();
                 
                 currentSelectedDate = prevMonth;
-                updateCalendarDisplay();
-                
-                // Refresh data for the new month
-                Promise.all([
-                    fetchData(), // Update users registered
-                    fetchViewsOrdersData(), // Update views and active users
-                    fetchImpressionsData() // Update impressions
-                ]).then(() => {
-                    hideLoading();
-                }).catch(error => {
-                    console.error('Error loading data:', error);
-                    hideLoading();
-                });
+                renderCurrentMonthFromCache();
+                hideLoading();
             }
         }
 
@@ -3507,19 +3524,8 @@
                 saveCurrentMonthData();
                 
                 currentSelectedDate = nextMonth;
-                updateCalendarDisplay();
-                
-                // Refresh data for the new month
-                Promise.all([
-                    fetchData(), // Update users registered
-                    fetchViewsOrdersData(), // Update views and active users
-                    fetchImpressionsData() // Update impressions
-                ]).then(() => {
-                    hideLoading();
-                }).catch(error => {
-                    console.error('Error loading data:', error);
-                    hideLoading();
-                });
+                renderCurrentMonthFromCache();
+                hideLoading();
             }
         }
 
@@ -3962,6 +3968,7 @@
         function refreshData() {
             console.log('Actualizando datos...');
             showLoading();
+            availableMonths.clear();
             
             Promise.all([
                 fetchData(),
@@ -4019,6 +4026,7 @@
             
             // Show loading spinner for initial load
             showLoading();
+            availableMonths.clear();
             
             // Load initial data
             Promise.all([
